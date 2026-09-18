@@ -1,0 +1,7 @@
+{
+  "name": "TryGC WhatsApp Task Automation Hub",
+  "description": "Production-grade WhatsApp Web task automation system for TryGC to monitor groups, capture text and voice requests from authorized requesters, extract tasks with NLP and speech intelligence, and manage the full task lifecycle.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
