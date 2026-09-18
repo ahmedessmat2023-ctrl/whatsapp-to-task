@@ -16,6 +16,7 @@ import {
   Tag,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { crossReferenceTranscriptWithPeople } from '../utils/peopleAliasMatcher';
 
 export const PeopleMappingView: React.FC = () => {
   const { people, addPerson, language } = useApp();
@@ -25,15 +26,13 @@ export const PeopleMappingView: React.FC = () => {
   const [matchResult, setMatchResult] = useState<string | null>(null);
 
   const handleTestMention = () => {
-    const clean = testMention.toLowerCase().replace(/[@\s]/g, '');
-    const found = people.find((p) =>
-      p.aliases.some((a) => clean.includes(a.toLowerCase()) || a.toLowerCase().includes(clean)) ||
-      (p.canonicalName || p.displayName).toLowerCase().includes(clean)
-    );
-
-    if (found) {
-      const name = found.canonicalName || found.displayName;
-      setMatchResult(`Resolved to: ${name} (${found.role} — ${found.department})`);
+    const res = crossReferenceTranscriptWithPeople(testMention, people);
+    if (res.primarySuggestion) {
+      const found = res.primarySuggestion;
+      const name = found.displayName || found.canonicalName;
+      setMatchResult(
+        `Resolved to: ${name} (${found.role} — ${found.department}) [Matched alias: "${res.primaryMatch?.matchedAlias}", Confidence: ${res.primaryMatch?.confidence}%]`
+      );
     } else {
       setMatchResult('No registered person alias matched. System defaults to Unassigned or Department Lead.');
     }

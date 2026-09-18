@@ -257,7 +257,7 @@ export const TaskTrackerView: React.FC = () => {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredTasks.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-slate-400">
+                    <td colSpan={8} className="p-8 text-center text-slate-500 dark:text-slate-400">
                       No matching tasks found. Adjust your filters or dispatch a simulation.
                     </td>
                   </tr>
@@ -276,7 +276,7 @@ export const TaskTrackerView: React.FC = () => {
                       {/* Title */}
                       <td className="px-4 py-3.5 max-w-xs">
                         <div className="font-extrabold text-slate-900 dark:text-white line-clamp-1">{t.title}</div>
-                        <div className="text-[11px] text-slate-400 line-clamp-1 italic">"{t.originalRequest}"</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 italic font-medium">"{t.originalRequest}"</div>
                       </td>
 
                       {/* Group */}
@@ -289,7 +289,7 @@ export const TaskTrackerView: React.FC = () => {
                       {/* Assignee */}
                       <td className="px-4 py-3.5">
                         <div className="font-bold text-slate-800 dark:text-slate-200">{t.assignedTo}</div>
-                        <div className="text-[10px] text-slate-400">{t.department}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{t.department}</div>
                       </td>
 
                       {/* Priority */}
@@ -309,7 +309,7 @@ export const TaskTrackerView: React.FC = () => {
                       {/* Due / SLA */}
                       <td className="px-4 py-3.5">
                         <div className="font-semibold text-slate-800 dark:text-slate-200">{t.dueDate}</div>
-                        <div className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
                           <span className={`w-1.5 h-1.5 rounded-full ${ragColors[t.rag]}`} />
                           {t.sla}
                         </div>
@@ -368,7 +368,7 @@ export const TaskTrackerView: React.FC = () => {
                         {t.title}
                       </h4>
 
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800 font-medium">
                         <span className="font-bold text-slate-700 dark:text-slate-300 truncate max-w-[100px]">
                           {t.assignedTo}
                         </span>

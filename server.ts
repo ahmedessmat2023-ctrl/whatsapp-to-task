@@ -519,26 +519,615 @@ async function startServer() {
     res.json(store);
   });
 
-  // Backup / Export
-  app.get('/api/backup/export', (req: Request, res: Response) => {
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename=trygc-hub-backup-${Date.now()}.json`);
-    res.send(JSON.stringify(store, null, 2));
+  // Database Storage & Backup Stats
+  const BACKUPS_DIR = path.join(DATA_DIR, 'backups');
+  function ensureBackupsDir() {
+    if (!fs.existsSync(BACKUPS_DIR)) {
+      fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+    }
+  }
+
+  function getSnapshotList() {
+    ensureBackupsDir();
+    try {
+      const files = fs.readdirSync(BACKUPS_DIR);
+      return files
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => {
+          const p = path.join(BACKUPS_DIR, f);
+          const st = fs.statSync(p);
+          return {
+            filename: f,
+            sizeBytes: st.size,
+            createdAt: st.mtime.toISOString(),
+          };
+        })
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function escapeCsvValue(val: any): string {
+    if (val === null || val === undefined) return '""';
+    if (Array.isArray(val)) {
+      val = val.join('; ');
+    } else if (typeof val === 'object') {
+      val = JSON.stringify(val);
+    }
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  }
+
+  function toCsvString(headers: { key: string; label: string }[], rows: any[]): string {
+    const headerLine = headers.map((h) => `"${h.label.replace(/"/g, '""')}"`).join(',');
+    const rowLines = rows.map((row) =>
+      headers.map((h) => escapeCsvValue(row[h.key])).join(',')
+    );
+    // Prepend UTF-8 BOM so Excel and Google Sheets render Arabic and English characters properly
+    return '\uFEFF' + [headerLine, ...rowLines].join('\r\n');
+  }
+
+  function parseCsvRows(csvText: string): string[][] {
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentField = '';
+    let inQuotes = false;
+
+    if (csvText.charCodeAt(0) === 0xFEFF) {
+      csvText = csvText.slice(1);
+    }
+
+    for (let i = 0; i < csvText.length; i++) {
+      const char = csvText[i];
+      const nextChar = csvText[i + 1];
+
+      if (inQuotes) {
+        if (char === '"') {
+          if (nextChar === '"') {
+            currentField += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          currentField += char;
+        }
+      } else {
+        if (char === '"') {
+          inQuotes = true;
+        } else if (char === ',') {
+          currentRow.push(currentField.trim());
+          currentField = '';
+        } else if (char === '\r') {
+          if (nextChar === '\n') {
+            i++;
+          }
+          currentRow.push(currentField.trim());
+          rows.push(currentRow);
+          currentRow = [];
+          currentField = '';
+        } else if (char === '\n') {
+          currentRow.push(currentField.trim());
+          rows.push(currentRow);
+          currentRow = [];
+          currentField = '';
+        } else {
+          currentField += char;
+        }
+      }
+    }
+
+    if (currentField.length > 0 || currentRow.length > 0) {
+      currentRow.push(currentField.trim());
+      rows.push(currentRow);
+    }
+
+    return rows.filter((r) => r.length > 0 && r.some((c) => c.trim().length > 0));
+  }
+
+  // Backup / Database Stats
+  app.get('/api/backup/stats', (req: Request, res: Response) => {
+    let sizeBytes = 0;
+    try {
+      if (fs.existsSync(STORE_FILE)) {
+        sizeBytes = fs.statSync(STORE_FILE).size;
+      }
+    } catch (_) {}
+
+    res.json({
+      engine: 'SQLite / Local-First Database Store',
+      databaseFile: 'data/store.json',
+      fileSizeBytes: sizeBytes,
+      lastUpdated: store.lastUpdated,
+      counts: {
+        tasks: store.tasks?.length || 0,
+        drafts: store.drafts?.length || 0,
+        groups: store.groups?.length || 0,
+        people: store.people?.length || 0,
+        projects: store.projects?.length || 0,
+        messages: store.messages?.length || 0,
+        diagnostics: store.diagnostics?.length || 0,
+      },
+      snapshots: getSnapshotList(),
+    });
   });
 
-  // Backup / Import
-  app.post('/api/backup/import', (req: Request, res: Response) => {
-    const importedData = req.body;
-    if (importedData && importedData.tasks && importedData.groups) {
-      store = { ...importedData, lastUpdated: new Date().toISOString() };
-      saveStore(store);
-      return res.json({ success: true, message: 'Store imported successfully' });
+  // Backup / Export JSON
+  app.get('/api/backup/export', (req: Request, res: Response) => {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupData = {
+      metadata: {
+        app: 'TryGC WhatsApp Task Automation Hub',
+        databaseEngine: 'SQLite / Local-First Database Store',
+        version: '1.4.0',
+        exportedAt: new Date().toISOString(),
+        schemaVersion: 1,
+        recordCounts: {
+          tasks: store.tasks?.length || 0,
+          drafts: store.drafts?.length || 0,
+          groups: store.groups?.length || 0,
+          people: store.people?.length || 0,
+          projects: store.projects?.length || 0,
+          messages: store.messages?.length || 0,
+          diagnostics: store.diagnostics?.length || 0,
+        },
+      },
+      ...store,
+    };
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=trygc-sqlite-backup-${timestamp}.json`);
+    res.send(JSON.stringify(backupData, null, 2));
+  });
+
+  // Backup / Export CSV
+  app.get('/api/backup/export-csv', (req: Request, res: Response) => {
+    const table = (req.query.table as string) || 'tasks';
+    const timestamp = new Date().toISOString().slice(0, 10);
+
+    if (table === 'tasks') {
+      const headers = [
+        { key: 'id', label: 'Task ID' },
+        { key: 'title', label: 'Task Title' },
+        { key: 'description', label: 'Description' },
+        { key: 'assignedTo', label: 'Assigned To' },
+        { key: 'department', label: 'Department' },
+        { key: 'project', label: 'Project' },
+        { key: 'client', label: 'Client' },
+        { key: 'country', label: 'Country' },
+        { key: 'priority', label: 'Priority' },
+        { key: 'status', label: 'Status' },
+        { key: 'rag', label: 'RAG' },
+        { key: 'dueDate', label: 'Due Date' },
+        { key: 'rawDeadlinePhrase', label: 'Deadline Mention' },
+        { key: 'confidence', label: 'Confidence %' },
+        { key: 'sourceGroup', label: 'WhatsApp Group' },
+        { key: 'sourceSender', label: 'Source Requester' },
+        { key: 'dependencies', label: 'Dependencies' },
+        { key: 'requiredOutput', label: 'Required Output' },
+        { key: 'createdAt', label: 'Created At' },
+        { key: 'lastUpdated', label: 'Last Updated' },
+      ];
+      const csv = toCsvString(headers, store.tasks || []);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename=trygc-tasks-${timestamp}.csv`);
+      return res.send(csv);
     }
-    res.status(400).json({ error: 'Invalid backup file payload' });
+
+    if (table === 'drafts') {
+      const headers = [
+        { key: 'id', label: 'Draft ID' },
+        { key: 'title', label: 'Extracted Title' },
+        { key: 'description', label: 'Description' },
+        { key: 'suggestedOwner', label: 'Suggested Assignee' },
+        { key: 'department', label: 'Department' },
+        { key: 'project', label: 'Project' },
+        { key: 'client', label: 'Client' },
+        { key: 'country', label: 'Country' },
+        { key: 'priority', label: 'Priority' },
+        { key: 'deadline', label: 'Target Deadline' },
+        { key: 'rawDeadlinePhrase', label: 'Raw Mention' },
+        { key: 'confidenceScore', label: 'Confidence Score' },
+        { key: 'sourceGroupName', label: 'Source Group' },
+        { key: 'sourceSender', label: 'Source Sender' },
+        { key: 'originalRequest', label: 'Original Audio/Text' },
+        { key: 'status', label: 'Review Status' },
+        { key: 'createdAt', label: 'Extracted At' },
+      ];
+      const csv = toCsvString(headers, store.drafts || []);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename=trygc-drafts-${timestamp}.csv`);
+      return res.send(csv);
+    }
+
+    if (table === 'people') {
+      const headers = [
+        { key: 'id', label: 'Person ID' },
+        { key: 'displayName', label: 'Display Name' },
+        { key: 'canonicalName', label: 'Canonical Name' },
+        { key: 'role', label: 'Role' },
+        { key: 'department', label: 'Department' },
+        { key: 'phone', label: 'WhatsApp Phone' },
+        { key: 'email', label: 'Email' },
+        { key: 'aliases', label: 'Aliases (Semicolon separated)' },
+        { key: 'country', label: 'Country' },
+        { key: 'isExecutive', label: 'Executive' },
+      ];
+      const csv = toCsvString(headers, store.people || []);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename=trygc-people-${timestamp}.csv`);
+      return res.send(csv);
+    }
+
+    if (table === 'groups') {
+      const headers = [
+        { key: 'id', label: 'Group ID' },
+        { key: 'name', label: 'Group Name' },
+        { key: 'jid', label: 'WhatsApp JID' },
+        { key: 'priority', label: 'Monitoring Priority' },
+        { key: 'autoExtract', label: 'Auto Extract' },
+        { key: 'sentimentAnalysis', label: 'Sentiment' },
+        { key: 'membersCount', label: 'Members' },
+        { key: 'language', label: 'Language' },
+        { key: 'region', label: 'Region' },
+        { key: 'active', label: 'Active' },
+      ];
+      const csv = toCsvString(headers, store.groups || []);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename=trygc-monitored-groups-${timestamp}.csv`);
+      return res.send(csv);
+    }
+
+    if (table === 'messages') {
+      const headers = [
+        { key: 'id', label: 'Message ID' },
+        { key: 'sender', label: 'Sender' },
+        { key: 'senderName', label: 'Sender Name' },
+        { key: 'senderPhone', label: 'Sender Phone' },
+        { key: 'groupName', label: 'Group Name' },
+        { key: 'type', label: 'Type (text/voice)' },
+        { key: 'text', label: 'Text Message' },
+        { key: 'transcript', label: 'Voice Transcript' },
+        { key: 'voiceDuration', label: 'Duration Sec' },
+        { key: 'isFromAdel', label: 'From Adel HAMMAD' },
+        { key: 'status', label: 'Status' },
+        { key: 'timestamp', label: 'Timestamp' },
+      ];
+      const csv = toCsvString(headers, store.messages || []);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename=trygc-messages-log-${timestamp}.csv`);
+      return res.send(csv);
+    }
+
+    res.status(400).json({ error: `Unknown table '${table}' for CSV export` });
+  });
+
+  // Backup / Import JSON
+  app.post('/api/backup/import', (req: Request, res: Response) => {
+    try {
+      const payload = req.body;
+      const mode = payload.mode || 'replace'; // 'replace' | 'merge'
+      const importedData = payload.data || payload;
+
+      if (!importedData || typeof importedData !== 'object') {
+        return res.status(400).json({ error: 'Invalid JSON backup payload format' });
+      }
+
+      // Check required minimum entities
+      if (!importedData.tasks && !importedData.groups && !importedData.people) {
+        return res.status(400).json({
+          error: 'Backup file must contain at least tasks, groups, or people tables',
+        });
+      }
+
+      // Save an automated pre-import snapshot before modifying data
+      ensureBackupsDir();
+      const autoSnapshotFile = path.join(
+        BACKUPS_DIR,
+        `snapshot-auto-pre-import-${Date.now()}.json`
+      );
+      fs.writeFileSync(autoSnapshotFile, JSON.stringify(store, null, 2), 'utf-8');
+
+      if (mode === 'replace') {
+        store = {
+          groups: Array.isArray(importedData.groups) ? importedData.groups : store.groups,
+          people: Array.isArray(importedData.people) ? importedData.people : store.people,
+          projects: Array.isArray(importedData.projects) ? importedData.projects : store.projects,
+          tasks: Array.isArray(importedData.tasks) ? importedData.tasks : store.tasks,
+          drafts: Array.isArray(importedData.drafts) ? importedData.drafts : store.drafts,
+          messages: Array.isArray(importedData.messages) ? importedData.messages : store.messages,
+          diagnostics: Array.isArray(importedData.diagnostics) ? importedData.diagnostics : store.diagnostics,
+          rules: importedData.rules || store.rules,
+          health: importedData.health || store.health,
+          lastUpdated: new Date().toISOString(),
+        };
+      } else {
+        // Merge mode: upsert records
+        const mergeById = <T extends { id: string }>(current: T[], incoming: T[] = []): T[] => {
+          const map = new Map<string, T>();
+          current.forEach((item) => map.set(item.id, item));
+          incoming.forEach((item) => map.set(item.id, item));
+          return Array.from(map.values());
+        };
+
+        store = {
+          ...store,
+          groups: mergeById(store.groups, importedData.groups || []),
+          people: mergeById(store.people, importedData.people || []),
+          projects: mergeById(store.projects, importedData.projects || []),
+          tasks: mergeById(store.tasks, importedData.tasks || []),
+          drafts: mergeById(store.drafts, importedData.drafts || []),
+          messages: mergeById(store.messages, importedData.messages || []),
+          diagnostics: Array.isArray(importedData.diagnostics)
+            ? [...store.diagnostics, ...importedData.diagnostics].slice(-200)
+            : store.diagnostics,
+          rules: importedData.rules ? { ...store.rules, ...importedData.rules } : store.rules,
+          lastUpdated: new Date().toISOString(),
+        };
+      }
+
+      saveStore(store);
+
+      return res.json({
+        success: true,
+        mode,
+        message:
+          mode === 'replace'
+            ? 'Local database completely restored from backup file'
+            : 'Backup data merged and deduplicated into local database',
+        counts: {
+          tasks: store.tasks.length,
+          drafts: store.drafts.length,
+          groups: store.groups.length,
+          people: store.people.length,
+          projects: store.projects.length,
+          messages: store.messages.length,
+        },
+      });
+    } catch (err: any) {
+      console.error('Failed to import database:', err);
+      res.status(500).json({ error: 'Database import failed: ' + (err?.message || 'Server error') });
+    }
+  });
+
+  // Backup / Import CSV
+  app.post('/api/backup/import-csv', (req: Request, res: Response) => {
+    try {
+      const { table = 'tasks', csvText = '', mode = 'merge' } = req.body;
+
+      if (!csvText || typeof csvText !== 'string') {
+        return res.status(400).json({ error: 'Empty or invalid CSV content' });
+      }
+
+      const rows = parseCsvRows(csvText);
+      if (rows.length < 2) {
+        return res.status(400).json({ error: 'CSV must have a header row and at least one data row' });
+      }
+
+      const headers = rows[0].map((h) => h.toLowerCase().trim().replace(/[\s_-]+/g, ''));
+      const dataRows = rows.slice(1);
+
+      // Create pre-import snapshot
+      ensureBackupsDir();
+      const autoSnapshotFile = path.join(
+        BACKUPS_DIR,
+        `snapshot-auto-pre-csv-${table}-${Date.now()}.json`
+      );
+      fs.writeFileSync(autoSnapshotFile, JSON.stringify(store, null, 2), 'utf-8');
+
+      let importedCount = 0;
+
+      if (table === 'tasks') {
+        const newTasks: Task[] = [];
+        for (const row of dataRows) {
+          const getVal = (possibleKeys: string[]): string => {
+            for (const key of possibleKeys) {
+              const idx = headers.findIndex((h) => h.includes(key.toLowerCase()));
+              if (idx !== -1 && row[idx]) return row[idx].trim();
+            }
+            return '';
+          };
+
+          const title = getVal(['title', 'task', 'tasktitle', 'name']);
+          if (!title) continue;
+
+          const id = getVal(['id', 'taskid']) || `task_csv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          const priorityRaw = getVal(['priority']);
+          const priority: Task['priority'] = ['Critical', 'High', 'Medium', 'Low'].includes(priorityRaw)
+            ? (priorityRaw as any)
+            : 'Medium';
+
+          const statusRaw = getVal(['status']);
+          const status: Task['status'] = ['Not Started', 'In Progress', 'Awaiting Sign-off', 'Done', 'Blocked'].includes(statusRaw)
+            ? (statusRaw as any)
+            : 'Not Started';
+
+          const ragRaw = getVal(['rag', 'ragstatus']);
+          const rag: Task['rag'] = ['Green', 'Amber', 'Red'].includes(ragRaw)
+            ? (ragRaw as any)
+            : 'Green';
+
+          const task: Task = {
+            id,
+            title,
+            description: getVal(['description', 'desc', 'notes']) || title,
+            originalRequest: getVal(['originalrequest', 'original', 'request']) || title,
+            whatsAppGroup: getVal(['sourcegroup', 'whatsappgroup', 'group']) || 'CSV Import',
+            requester: getVal(['sourcesender', 'sender', 'requester']) || 'Bulk Import',
+            sourceMessageId: `csv_import_${Date.now()}_${id}`,
+            sourceTimestamp: new Date().toISOString(),
+            messageType: 'text',
+            assignedTo: getVal(['assignedto', 'assignee', 'owner', 'assigned']) || 'Unassigned',
+            department: getVal(['department', 'dept']) || 'General Operations',
+            project: getVal(['project', 'proj']) || 'GC Operational Requests',
+            client: getVal(['client']) || 'General Client',
+            country: getVal(['country']) || 'Egypt',
+            priority,
+            status,
+            startDate: new Date().toISOString().split('T')[0],
+            dueDate: getVal(['duedate', 'deadline', 'due']) || new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10),
+            sla: getVal(['sla']) || 'On Track (Imported)',
+            rag,
+            progress: Number(getVal(['progress'])) || 0,
+            dependencies: getVal(['dependencies', 'deps']) || 'None',
+            requiredOutput: getVal(['requiredoutput', 'output']) || 'Execution Deliverable',
+            lastUpdate: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+            timeline: [
+              {
+                id: `evt_${Date.now()}`,
+                timestamp: new Date().toISOString(),
+                actor: 'System CSV Importer',
+                action: 'Imported task from CSV file',
+              },
+            ],
+          };
+          newTasks.push(task);
+        }
+
+        if (mode === 'replace') {
+          store.tasks = newTasks;
+        } else {
+          const map = new Map<string, Task>();
+          store.tasks.forEach((t) => map.set(t.id, t));
+          newTasks.forEach((t) => map.set(t.id, t));
+          store.tasks = Array.from(map.values());
+        }
+        importedCount = newTasks.length;
+      } else if (table === 'people') {
+        const newPeople: PersonMapping[] = [];
+        for (const row of dataRows) {
+          const getVal = (possibleKeys: string[]): string => {
+            for (const key of possibleKeys) {
+              const idx = headers.findIndex((h) => h.includes(key.toLowerCase()));
+              if (idx !== -1 && row[idx]) return row[idx].trim();
+            }
+            return '';
+          };
+
+          const displayName = getVal(['displayname', 'name', 'person', 'fullname']);
+          if (!displayName) continue;
+
+          const id = getVal(['id', 'personid']) || `person_csv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          const aliasesRaw = getVal(['aliases', 'alias', 'nicknames']);
+          const aliases = aliasesRaw ? aliasesRaw.split(';').map((s) => s.trim()).filter(Boolean) : [displayName];
+
+          const person: PersonMapping = {
+            id,
+            displayName,
+            internalName: getVal(['internalname', 'canonicalname', 'canonical']) || displayName,
+            canonicalName: getVal(['canonicalname', 'canonical']) || displayName,
+            role: getVal(['role', 'title', 'position']) || 'Team Member',
+            department: getVal(['department', 'dept']) || 'Operations',
+            phone: getVal(['phone', 'whatsappphone', 'mobile']) || '+20100000000',
+            aliases,
+            isAuthorizedRequester: getVal(['isauthorized', 'authorized', 'isexecutive']).toLowerCase() === 'true',
+          };
+          newPeople.push(person);
+        }
+
+        if (mode === 'replace') {
+          store.people = newPeople;
+        } else {
+          const map = new Map<string, PersonMapping>();
+          store.people.forEach((p) => map.set(p.id, p));
+          newPeople.forEach((p) => map.set(p.id, p));
+          store.people = Array.from(map.values());
+        }
+        importedCount = newPeople.length;
+      } else {
+        return res.status(400).json({ error: `CSV import for '${table}' is not supported. Use 'tasks' or 'people'.` });
+      }
+
+      saveStore(store);
+
+      return res.json({
+        success: true,
+        table,
+        importedCount,
+        totalInTable: table === 'tasks' ? store.tasks.length : store.people.length,
+        message: `Successfully imported ${importedCount} records from CSV into ${table} table`,
+      });
+    } catch (err: any) {
+      console.error('CSV import error:', err);
+      res.status(500).json({ error: 'Failed to parse and import CSV: ' + (err?.message || 'Server error') });
+    }
+  });
+
+  // Backup / Create Manual Snapshot
+  app.post('/api/backup/snapshot', (req: Request, res: Response) => {
+    try {
+      ensureBackupsDir();
+      const label = (req.body?.label || 'manual').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `snapshot-${label}-${Date.now()}.json`;
+      const filePath = path.join(BACKUPS_DIR, filename);
+      fs.writeFileSync(filePath, JSON.stringify(store, null, 2), 'utf-8');
+      res.json({
+        success: true,
+        filename,
+        message: `Backup snapshot '${filename}' created successfully`,
+        snapshots: getSnapshotList(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to create snapshot: ' + err?.message });
+    }
+  });
+
+  // Backup / Restore Snapshot
+  app.post('/api/backup/restore-snapshot', (req: Request, res: Response) => {
+    try {
+      const { filename } = req.body;
+      if (!filename || typeof filename !== 'string') {
+        return res.status(400).json({ error: 'Snapshot filename is required' });
+      }
+
+      // Security check: avoid directory traversal
+      const safeFilename = path.basename(filename);
+      const filePath = path.join(BACKUPS_DIR, safeFilename);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: `Snapshot file '${safeFilename}' not found` });
+      }
+
+      // Save a safety copy of current store before restoring snapshot
+      const safetyCopy = path.join(BACKUPS_DIR, `snapshot-pre-restore-${Date.now()}.json`);
+      fs.writeFileSync(safetyCopy, JSON.stringify(store, null, 2), 'utf-8');
+
+      const fileData = fs.readFileSync(filePath, 'utf-8');
+      const parsed = JSON.parse(fileData);
+      const restoredStore = parsed.data || parsed;
+
+      if (restoredStore && restoredStore.tasks) {
+        store = {
+          ...restoredStore,
+          lastUpdated: new Date().toISOString(),
+        };
+        saveStore(store);
+        return res.json({
+          success: true,
+          message: `Restored local database from snapshot '${safeFilename}'`,
+          counts: {
+            tasks: store.tasks.length,
+            drafts: store.drafts.length,
+            groups: store.groups.length,
+            people: store.people.length,
+          },
+        });
+      }
+      res.status(400).json({ error: 'Invalid snapshot data structure' });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to restore snapshot: ' + err?.message });
+    }
   });
 
   // Reset to initial seed
   app.post('/api/backup/reset', (req: Request, res: Response) => {
+    // Save snapshot before factory reset
+    ensureBackupsDir();
+    const preResetFile = path.join(BACKUPS_DIR, `snapshot-pre-factory-reset-${Date.now()}.json`);
+    fs.writeFileSync(preResetFile, JSON.stringify(store, null, 2), 'utf-8');
+
     store = {
       groups: INITIAL_MONITORED_GROUPS,
       people: INITIAL_PEOPLE_MAPPINGS,
@@ -552,7 +1141,7 @@ async function startServer() {
       lastUpdated: new Date().toISOString(),
     };
     saveStore(store);
-    res.json({ success: true, message: 'Store reset to factory seed data' });
+    res.json({ success: true, message: 'Store reset to factory seed data. Safety snapshot created.' });
   });
 
   // Capture Diagnostics List
@@ -773,6 +1362,10 @@ async function startServer() {
               sourceMessageId: messageId,
               sourceGroupId: matchedGroup?.id || 'grp_13',
               sourceGroupName: matchedGroup?.name || group,
+              sourceGroup: matchedGroup?.name || group,
+              sourceSender: matchedPerson?.displayName || sender,
+              sourceMessageType: type,
+              originalRequest: contentToParse,
               requester: matchedPerson?.displayName || sender,
               title: item.title,
               description: item.description,
@@ -785,6 +1378,7 @@ async function startServer() {
               rawDeadlinePhrase: item.rawDeadlinePhrase,
               deadline: item.deadline,
               confidence: item.confidence,
+              confidenceScore: item.confidence,
               confidenceLevel: item.confidence >= 85 ? 'high' : item.confidence >= 70 ? 'medium' : 'low',
               autoCreated: false,
               dependencies: item.dependencies,
@@ -991,6 +1585,45 @@ async function startServer() {
 
     saveStore(store);
     res.json({ success: true, message: `Draft split into ${splits.length} tasks` });
+  });
+
+  // Update Draft (e.g. override suggestedOwner, department, priority, etc.)
+  app.post('/api/drafts/update', (req: Request, res: Response) => {
+    const { draftId, updates = {} } = req.body;
+    const draft = store.drafts.find((d) => d.id === draftId);
+    if (!draft) return res.status(404).json({ error: 'Draft not found' });
+    Object.assign(draft, updates);
+    saveStore(store);
+    res.json({ success: true, draft });
+  });
+
+  // Batch Auto Cross-Reference Drafts
+  app.post('/api/drafts/auto-cross-reference', (req: Request, res: Response) => {
+    let updatedCount = 0;
+    store.drafts.forEach((draft) => {
+      const sourceMsg = store.messages.find((m) => m.id === draft.sourceMessageId);
+      const textToSearch = draft.originalRequest || sourceMsg?.voiceTranscript || sourceMsg?.text || draft.description;
+      if (textToSearch) {
+        for (const person of store.people) {
+          const namesToCheck = [person.displayName, person.internalName, ...(person.aliases || [])];
+          const matched = namesToCheck.some((alias) => {
+            if (!alias || alias.trim().length < 2) return false;
+            return textToSearch.toLowerCase().includes(alias.toLowerCase());
+          });
+          if (matched && draft.suggestedOwner !== person.displayName) {
+            draft.suggestedOwner = person.displayName;
+            draft.department = person.department;
+            draft.matchedAlias = namesToCheck.find((a) => textToSearch.toLowerCase().includes(a.toLowerCase()));
+            updatedCount++;
+            break;
+          }
+        }
+      }
+    });
+    if (updatedCount > 0) {
+      saveStore(store);
+    }
+    res.json({ success: true, updatedCount, drafts: store.drafts });
   });
 
   // Tasks CRUD

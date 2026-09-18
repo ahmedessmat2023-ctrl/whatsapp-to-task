@@ -161,7 +161,7 @@ export const DashboardView: React.FC = () => {
               <div className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mb-1">
                 {item.value}
               </div>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate">{item.sub}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-medium">{item.sub}</p>
             </div>
           );
         })}
@@ -176,7 +176,7 @@ export const DashboardView: React.FC = () => {
               <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
                 {isAr ? 'توزيع المهام حسب الأقسام' : 'Department Workload Distribution'}
               </h3>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {isAr ? 'المهام المستخرجة من توجيهات عادل حماد' : 'Active tasks generated from Adel requests'}
               </p>
             </div>
@@ -213,7 +213,7 @@ export const DashboardView: React.FC = () => {
               <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
                 {isAr ? 'مؤشرات الإنجاز وصحة الالتزام (SLA & RAG)' : 'SLA Compliance & Priority Matrix'}
               </h3>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {isAr ? 'التزام الفريق بمواعيد التوجيهات' : 'Delivery health across active assignments'}
               </p>
             </div>
@@ -258,11 +258,11 @@ export const DashboardView: React.FC = () => {
           {/* Quick Metrics Bar */}
           <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">{isAr ? 'متوسط وقت التحويل لمهمة:' : 'Avg Extraction Latency:'}</span>
+              <span className="text-slate-600 dark:text-slate-400 font-medium">{isAr ? 'متوسط وقت التحويل لمهمة:' : 'Avg Extraction Latency:'}</span>
               <span className="font-bold text-slate-800 dark:text-slate-200">1.4s (Automated AI)</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">{isAr ? 'دقة تحديد الأشخاص والمشاريع:' : 'Entity Match Accuracy:'}</span>
+              <span className="text-slate-600 dark:text-slate-400 font-medium">{isAr ? 'دقة تحديد الأشخاص والمشاريع:' : 'Entity Match Accuracy:'}</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400">98.5% (Predefined Aliases)</span>
             </div>
           </div>
@@ -276,7 +276,7 @@ export const DashboardView: React.FC = () => {
             <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
               {isAr ? 'أحدث المهام النشطة من توجيهات واتساب' : 'Recently Extracted Active Tasks'}
             </h3>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
               {isAr ? 'اضغط على المهمة للاطلاع على المصدر والخط الزمني' : 'Click any task to view source WhatsApp traceability'}
             </p>
           </div>
@@ -304,12 +304,12 @@ export const DashboardView: React.FC = () => {
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
                     {task.whatsAppGroup}
                   </span>
-                  <span className="text-[10px] font-bold text-slate-400">
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
                     {task.messageType === 'voice' ? '🎙️ Voice Note' : '💬 Text'}
                   </span>
                 </div>
                 <h4 className="text-xs font-bold text-slate-900 dark:text-white">{task.title}</h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-1">
                   "{task.originalRequest}"
                 </p>
               </div>
@@ -317,7 +317,7 @@ export const DashboardView: React.FC = () => {
               <div className="flex items-center gap-3 self-end md:self-center flex-shrink-0 text-xs">
                 <div className="text-right">
                   <span className="font-bold text-slate-800 dark:text-slate-200 block">{task.assignedTo}</span>
-                  <span className="text-[10px] text-slate-400">{task.department}</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{task.department}</span>
                 </div>
                 <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold text-xs">
                   {task.status}

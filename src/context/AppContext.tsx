@@ -50,6 +50,8 @@ interface AppContextType {
   refreshState: () => Promise<void>;
   approveDraft: (draftId: string, overrides?: Partial<Task>) => Promise<void>;
   approveAllDrafts: () => Promise<void>;
+  updateDraft: (draftId: string, updates: Partial<ExtractedTaskDraft>) => Promise<void>;
+  autoCrossReferenceDrafts: () => Promise<{ updatedCount: number }>;
   ignoreDraft: (draftId: string, reason?: string) => Promise<void>;
   splitDraft: (draftId: string, splits: any[]) => Promise<void>;
   updateTaskStatus: (taskId: string, status: any, note?: string) => Promise<void>;
@@ -77,9 +79,27 @@ const AppContext = createContext<AppContextType | null>(null);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [language, setLanguage] = useState<'en' | 'ar'>('en');
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('trygc_theme');
+      if (saved) return saved === 'dark';
+    } catch (_) {}
+    return false;
+  });
   const [showSimulator, setShowSimulator] = useState<boolean>(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      if (isDarkMode) {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('trygc_theme', 'dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('trygc_theme', 'light');
+      }
+    } catch (_) {}
+  }, [isDarkMode]);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [groups, setGroups] = useState<MonitoredGroup[]>([]);
@@ -234,6 +254,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.error('Error ignoring draft:', err);
     }
+  };
+
+  const updateDraft = async (draftId: string, updates: Partial<ExtractedTaskDraft>) => {
+    try {
+      // Optimistic update
+      setDrafts((prev) =>
+        prev.map((d) => (d.id === draftId ? { ...d, ...updates } : d))
+      );
+      const res = await fetch('/api/drafts/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draftId, updates }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.draft) {
+          setDrafts((prev) =>
+            prev.map((d) => (d.id === draftId ? data.draft : d))
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Error updating draft:', err);
+    }
+  };
+
+  const autoCrossReferenceDrafts = async (): Promise<{ updatedCount: number }> => {
+    try {
+      const res = await fetch('/api/drafts/auto-cross-reference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await refreshState();
+        return { updatedCount: data.updatedCount || 0 };
+      }
+    } catch (err) {
+      console.error('Error auto-cross-referencing drafts:', err);
+    }
+    return { updatedCount: 0 };
   };
 
   const splitDraft = async (draftId: string, splits: any[]) => {
@@ -429,6 +490,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         refreshState,
         approveDraft,
         approveAllDrafts,
+        updateDraft,
+        autoCrossReferenceDrafts,
         ignoreDraft,
         splitDraft,
         updateTaskStatus,

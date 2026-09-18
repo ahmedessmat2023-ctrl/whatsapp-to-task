@@ -101,7 +101,7 @@ export const Header: React.FC = () => {
                 ? 'الرابط متوقف'
                 : 'WhatsApp capture connector requires attention'}
           </span>
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">
+          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
             ({health.lastScan})
           </span>
         </button>
@@ -289,22 +289,22 @@ export const Header: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
-                <div className="p-3 rounded-xl border border-inherit">
-                  <span className="text-slate-400 block mb-0.5">{isAr ? 'آخر فحص للمحادثات' : 'Last DOM Scan'}</span>
+                <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                  <span className="text-slate-500 dark:text-slate-400 block mb-0.5 text-[11px] font-semibold">{isAr ? 'آخر فحص للمحادثات' : 'Last DOM Scan'}</span>
                   <span className="font-bold text-slate-900 dark:text-white">{health.lastScan}</span>
                 </div>
-                <div className="p-3 rounded-xl border border-inherit">
-                  <span className="text-slate-400 block mb-0.5">{isAr ? 'آخر رسالة مرصودة' : 'Last Observed Msg'}</span>
+                <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                  <span className="text-slate-500 dark:text-slate-400 block mb-0.5 text-[11px] font-semibold">{isAr ? 'آخر رسالة مرصودة' : 'Last Observed Msg'}</span>
                   <span className="font-bold text-slate-900 dark:text-white">{health.lastObservedMessage}</span>
                 </div>
-                <div className="p-3 rounded-xl border border-inherit">
-                  <span className="text-slate-400 block mb-0.5">{isAr ? 'المجموعة الحالية' : 'Current WhatsApp Group'}</span>
+                <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                  <span className="text-slate-500 dark:text-slate-400 block mb-0.5 text-[11px] font-semibold">{isAr ? 'المجموعة الحالية' : 'Current WhatsApp Group'}</span>
                   <span className="font-bold text-indigo-600 dark:text-indigo-400 truncate block">
                     {health.currentWhatsAppGroup}
                   </span>
                 </div>
-                <div className="p-3 rounded-xl border border-inherit">
-                  <span className="text-slate-400 block mb-0.5">{isAr ? 'إجمالي ميتا الرسائل' : 'Metadata Elements'}</span>
+                <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                  <span className="text-slate-500 dark:text-slate-400 block mb-0.5 text-[11px] font-semibold">{isAr ? 'إجمالي ميتا الرسائل' : 'Metadata Elements'}</span>
                   <span className="font-bold text-slate-900 dark:text-white">{health.messageMetadataCount}</span>
                 </div>
               </div>

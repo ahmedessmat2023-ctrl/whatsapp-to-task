@@ -116,7 +116,7 @@ export const Sidebar: React.FC = () => {
                   HUB
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 font-medium truncate max-w-[130px]">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate max-w-[130px]">
                 {isAr ? 'أتمتة مهام واتساب' : 'WhatsApp Automation'}
               </p>
             </div>
@@ -153,13 +153,13 @@ export const Sidebar: React.FC = () => {
                     ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
                     : isDarkMode
                     ? 'hover:bg-slate-800/80 text-slate-300 hover:text-white'
-                    : 'hover:bg-slate-100 text-slate-600 hover:text-slate-900'
+                    : 'hover:bg-slate-100 text-slate-700 hover:text-slate-900'
                 }`}
               >
                 <div className="flex items-center gap-2.5 truncate">
                   <Icon
                     className={`w-4 h-4 flex-shrink-0 transition-transform group-hover:scale-110 ${
-                      isActive ? 'text-white' : 'text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
+                      isActive ? 'text-white' : 'text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
                     }`}
                   />
                   <span className="truncate">{item.label}</span>

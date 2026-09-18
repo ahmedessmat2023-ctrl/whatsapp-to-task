@@ -116,6 +116,8 @@ export interface ExtractedTaskDraft {
   status: 'pending_review' | 'approved' | 'ignored' | 'merged' | 'split';
   createdAt: string;
   clarificationNote?: string;
+  matchedAlias?: string;
+  suggestedAssigneeReason?: string;
 }
 
 export interface TaskTimelineEvent {
